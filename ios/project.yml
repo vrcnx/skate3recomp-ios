@@ -35,7 +35,9 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     sources:
       - path: main.m
-      - path: Assets.xcassets
+      # Assets.xcassets, or LocalAssets.xcassets with an icon made from the
+      # user's own game files (ios/tools/make_icon_from_game.py, git-ignored).
+      - path: ${SKATE3_IOS_ASSETS}
     dependencies:
       - sdk: AudioToolbox.framework
       - sdk: AVFoundation.framework

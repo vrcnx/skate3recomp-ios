@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include <rex/cvar.h>
+#include <rex/graphics/native_guest_renderer.h>
 
 namespace {
 
@@ -63,10 +64,26 @@ void Skate3InitializeFieldOfViewOverride() {
 }
 
 float Skate3MaybeOverrideProjectionFovRadians(float native_radians) {
-  const uint32_t override_bits = g_projection_fov_override_bits.load(std::memory_order_relaxed);
-  if (!override_bits || !std::isfinite(native_radians) || native_radians < 0.5f ||
-      native_radians > 2.4f) {
+  // Camera-like FOVs only (the routine also builds other projections).
+  if (!std::isfinite(native_radians) || native_radians < 0.5f || native_radians > 2.4f) {
     return native_radians;
   }
-  return FloatFromBits(override_bits);
+  const uint32_t override_bits = g_projection_fov_override_bits.load(std::memory_order_relaxed);
+  float radians = override_bits ? FloatFromBits(override_bits) : native_radians;
+
+  // Display narrower than 16:9 (a 4:3 iPad filled edge to edge): project a
+  // taller view so the game's own culling and shadows cover it; the native
+  // renderer crops the sides back by the same factor (WideOutputHorScale),
+  // leaving the 16:9 horizontal view with extra height (Vert+). Scaling the
+  // half-angle tangent works whichever axis the game's FOV refers to, since
+  // the game keeps its 16:9 projection aspect.
+  const double display_aspect = rex::graphics::GetNativeGuestOutputWideAspect();
+  constexpr double kGameAspect = 16.0 / 9.0;
+  if (display_aspect > 0.0 && display_aspect < kGameAspect - 0.01 &&
+      rex::graphics::IsNativeGuestOutputActive()) {
+    const double widened =
+        2.0 * std::atan(std::tan(0.5 * double(radians)) * (kGameAspect / display_aspect));
+    radians = float(std::min(widened, 2.9));
+  }
+  return radians;
 }

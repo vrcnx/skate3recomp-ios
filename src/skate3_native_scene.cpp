@@ -8255,11 +8255,13 @@ static void ApplySunOverride(FrameScene& scene) {
   }
 }
 
-// Hor+ ultrawide: clip-space X scale that widens the game's screen-shaped
-// projection to the wide guest-output aspect (see the SDK's
-// ApplyNativeGuestOutputWideAspect). 1.0 while the output is not wide. The
-// projection aspect is read off the matrix itself (|m11/m00|) so the FOV
-// override and freecam zoom compose naturally.
+// Display-shaped output: clip-space X scale that fits the game's
+// screen-shaped projection to the guest-output aspect (see the SDK's
+// ApplyNativeGuestOutputWideAspect). Below 1 widens (Hor+ ultrawide); above 1
+// crops the sides of a narrower display, whose extra height the game already
+// projects (Vert+, see Skate3MaybeOverrideProjectionFovRadians). 1.0 while
+// the output matches. The projection aspect is read off the matrix itself
+// (|m11/m00|) so the FOV override and freecam zoom compose naturally.
 float WideOutputHorScale(const float proj[16]) {
   const double wide_aspect = rex::graphics::GetNativeGuestOutputWideAspect();
   if (wide_aspect <= 0.0 || !rex::graphics::IsNativeGuestOutputActive()) {
@@ -8271,7 +8273,7 @@ float WideOutputHorScale(const float proj[16]) {
     return 1.0f;
   }
   const double base_aspect = double(m11) / double(m00);
-  if (wide_aspect <= base_aspect + 0.01) {
+  if (std::abs(wide_aspect - base_aspect) <= 0.01) {
     return 1.0f;
   }
   return float(base_aspect / wide_aspect);
@@ -9843,14 +9845,15 @@ void BuildFrameScene(uint8_t* base, const SubmitRecord* records, size_t count) {
       // it. The 0.97 margin shrinks the tested frustum so bounds poking
       // just inside an edge still count as view-culled.
       if (now - r.last_seen > kRetainTtlFrames ||
-          !ItemOutsideFrustum(r.item, guest_vp, 0.97f / wide_hor_scale)) {
+          !ItemOutsideFrustum(r.item, guest_vp, 0.97f / std::min(wide_hor_scale, 1.0f))) {
         rit = g_retained_items.erase(rit);
         continue;
       }
       // Draw it only if the RENDERED pose can actually see it (widened
       // frustum: only clearly-outside skips); after a fast 180 the trail
       // behind the camera stays retained but costs nothing.
-      if (!ItemOutsideFrustum(r.item, scene.view_proj, 1.05f / wide_hor_scale)) {
+      if (!ItemOutsideFrustum(r.item, scene.view_proj,
+                              1.05f / std::min(wide_hor_scale, 1.0f))) {
         scene.items.push_back(r.item);
         ++retain_appended;
       }

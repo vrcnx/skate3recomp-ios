@@ -8,7 +8,15 @@
 #include <string>
 
 #include <SDL3/SDL.h>
+#include <rex/cvar.h>
+#include <rex/input/input.h>
+#include <rex/kernel/guest_presence.h>
+#include <rex/kernel/xam/input_injection.h>
 #include <rex/logging.h>
+
+REXCVAR_DEFINE_BOOL(skate3_pause_on_background, true, "Skate 3",
+                    "iOS: open the game's pause menu when the app loses focus during "
+                    "gameplay (app switch, Notification/Control Center, alerts)");
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -185,6 +193,15 @@ void EndBackgroundTask() {
 bool HandleLifecycleEvent(void*, SDL_Event* event) {
   switch (event->type) {
     case SDL_EVENT_WILL_ENTER_BACKGROUND:
+      // Press Start for the player so they come back to the pause menu
+      // instead of mid-trick. Only while actually skating: the presence
+      // context reads 0 in the pause menu, so an open menu is never toggled
+      // shut. The guest polls the press as soon as it runs again.
+      if (REXCVAR_GET(skate3_pause_on_background) &&
+          rex::kernel::guest_presence::GameplayContextValue() == 1) {
+        rex::kernel::xam::QueueSyntheticInput(rex::input::X_INPUT_GAMEPAD_START, 8);
+        REXLOG_INFO("App lost focus during gameplay: pausing the game");
+      }
       // Saves are written by guest threads; without a background task iOS
       // suspends the process mid-write, and a swipe-kill from the app
       // switcher then leaves a truncated save. The grant (~30 s) lets
@@ -211,6 +228,20 @@ bool HandleLifecycleEvent(void*, SDL_Event* event) {
 }
 
 }  // namespace
+
+bool QueryIOSPanelPixels(int32_t& width, int32_t& height) {
+  // nativeBounds is the panel in pixels, always portrait-up; the app is
+  // landscape-only.
+  CGRect bounds = UIScreen.mainScreen.nativeBounds;
+  const int32_t a = int32_t(bounds.size.width);
+  const int32_t b = int32_t(bounds.size.height);
+  if (a <= 0 || b <= 0) {
+    return false;
+  }
+  width = std::max(a, b);
+  height = std::min(a, b);
+  return true;
+}
 
 void PrepareIOSStorage(const std::filesystem::path& game_root,
                        const std::filesystem::path& cache_root) {

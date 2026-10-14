@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <memory>
@@ -105,6 +106,11 @@ REXCVAR_DEFINE_BOOL(skate3_ultrawide_widen_game_frustum, true, "Skate 3",
 REXCVAR_DEFINE_DOUBLE(skate3_ultrawide_target_aspect, 0.0, "Skate 3",
                       "Ultrawide display aspect (0 = derive from the host display at boot)")
     .range(0.0, 8.0);
+REXCVAR_DEFINE_DOUBLE(skate3_fill_display_render_scale, 1.0, "Skate 3",
+                      "iOS: native render resolution as a fraction of the panel's pixels "
+                      "when the game fills the display (skate3_ultrawide)")
+    .range(0.5, 1.0)
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 namespace {
 
@@ -242,11 +248,28 @@ std::optional<DisplaySize> QueryFullscreenMonitorSize() {
 }
 #endif
 
+#if REX_PLATFORM_IOS
+}  // namespace
+namespace skate3 {
+// skate3_ios_platform.mm
+bool QueryIOSPanelPixels(int32_t& width, int32_t& height);
+}  // namespace skate3
+namespace {
+#endif
+
 std::optional<DisplaySize> ResolveUltrawideTargetDisplaySize() {
   if (rex::cvar::HasNonDefaultValue("resolution")) {
     return std::nullopt;
   }
 
+#if REX_PLATFORM_IOS
+  // The app always covers the whole screen.
+  int32_t panel_width = 0;
+  int32_t panel_height = 0;
+  if (skate3::QueryIOSPanelPixels(panel_width, panel_height)) {
+    return DisplaySize{panel_width, panel_height};
+  }
+#endif
   if (REXCVAR_GET(fullscreen)) {
     return QueryFullscreenMonitorSize();
   }
@@ -272,25 +295,36 @@ void ApplyUltrawideVideoDefaults() {
   double target_aspect = rex::cvar::HasNonDefaultValue("skate3_ultrawide_target_aspect")
                              ? REXCVAR_GET(skate3_ultrawide_target_aspect)
                              : 0.0;
-  if (target_aspect <= kSixteenNineAspect + kUltrawideAspectEpsilon) {
-    const std::optional<DisplaySize> target_size = ResolveUltrawideTargetDisplaySize();
+  const std::optional<DisplaySize> target_size = ResolveUltrawideTargetDisplaySize();
+  if (std::abs(target_aspect - kSixteenNineAspect) <= kUltrawideAspectEpsilon ||
+      target_aspect <= 0.0) {
     if (!target_size || target_size->width <= 0 || target_size->height <= 0) {
       return;
     }
     target_aspect =
         static_cast<double>(target_size->width) / static_cast<double>(target_size->height);
-    if (target_aspect <= kSixteenNineAspect + kUltrawideAspectEpsilon) {
+    if (std::abs(target_aspect - kSixteenNineAspect) <= kUltrawideAspectEpsilon) {
       return;
     }
     rex::cvar::SetFlagByName("skate3_ultrawide_target_aspect", std::to_string(target_aspect));
   }
 
-  // The native renderer draws true wide frames at this aspect (wide guest
-  // output + Hor+ projection + centered 2D band). Emulated fallback frames
-  // keep the 16:9 guest output and present pillarboxed via the letterbox
-  // default below.
-  rex::graphics::SetNativeGuestOutputWideAspect(
-      std::clamp(target_aspect, kSixteenNineAspect, 8.0));
+  // The native renderer draws true display-shaped frames at this aspect:
+  // wider than 16:9 is Hor+ (wide guest output, widened projection, 2D in a
+  // centered 16:9 band); narrower (a 4:3 tablet) is Vert+ (taller output,
+  // the game projects a taller FOV and the sides are cropped back, 2D fit to
+  // the width). Emulated fallback frames keep the 16:9 guest output and
+  // present letterboxed via the default below.
+  rex::graphics::SetNativeGuestOutputWideAspect(std::clamp(target_aspect, 1.0, 8.0));
+#if REX_PLATFORM_IOS
+  // Render the native frame at the panel's own pixels so the presenter maps
+  // it 1:1 instead of rescaling the 16:9 frontbuffer size.
+  if (target_size && target_size->width > 0 && target_size->height > 0) {
+    const double scale = std::clamp(REXCVAR_GET(skate3_fill_display_render_scale), 0.5, 1.0);
+    rex::graphics::SetNativeGuestOutputTargetSize(uint32_t(target_size->width * scale),
+                                                  uint32_t(target_size->height * scale));
+  }
+#endif
 
   if (!rex::cvar::HasNonDefaultValue("present_letterbox")) {
     rex::cvar::SetFlagByName("present_letterbox", "true");
@@ -418,11 +452,12 @@ void ApplyFirstRunVideoDefaults(const std::filesystem::path& settings_path,
 // discrete GPUs: on a passively cooled tablet, 4x MSAA, PCSS and 2x draw
 // distance cost frame time and heat for little visible gain at this screen
 // size. Resolution scale, SSAO, bloom and shafts stay as on desktop.
-void ApplyIOSDefaultsOnce(const std::filesystem::path& settings_path) {
-  const auto marker = settings_path.parent_path() / "ios_defaults_v1";
+bool ApplyIOSDefaultsOnce(const std::filesystem::path& settings_path) {
+  // v2: v1 set the values without saving them (see LoadAndNormalizeSimpleSettings).
+  const auto marker = settings_path.parent_path() / "ios_defaults_v2";
   std::error_code ec;
   if (std::filesystem::exists(marker, ec)) {
-    return;
+    return false;
   }
   rex::cvar::SetFlagByName("skate3_native_render_scene_msaa", "2");
   rex::cvar::SetFlagByName("skate3_native_render_scene_shadow_pcss", "false");
@@ -432,6 +467,23 @@ void ApplyIOSDefaultsOnce(const std::filesystem::path& settings_path) {
   std::filesystem::create_directories(marker.parent_path(), ec);
   std::ofstream(marker) << "iPad defaults applied; delete to apply them again.\n";
   REXLOG_INFO("Applied iOS graphics defaults (marker {})", marker.string());
+  return true;
+}
+
+// Fill the 4:3 iPad screen edge to edge (the display-shaped native output,
+// see ApplyUltrawideVideoDefaults) instead of letterboxing 16:9. Its own
+// marker, so installs that already took the graphics defaults get it too.
+bool ApplyIOSFillDisplayDefaultOnce(const std::filesystem::path& settings_path) {
+  const auto marker = settings_path.parent_path() / "ios_fill_display_v2";
+  std::error_code ec;
+  if (std::filesystem::exists(marker, ec)) {
+    return false;
+  }
+  rex::cvar::SetFlagByName("skate3_ultrawide", "true");
+  std::filesystem::create_directories(marker.parent_path(), ec);
+  std::ofstream(marker) << "Fill-display default applied; delete to apply it again.\n";
+  REXLOG_INFO("Enabled fill-display output (marker {})", marker.string());
+  return true;
 }
 
 // Not persisted in settings.toml, so set every launch unless a config file
@@ -453,8 +505,14 @@ void LoadAndNormalizeSimpleSettings(const std::filesystem::path& settings_path,
     ApplyFirstRunVideoDefaults(settings_path, developer_config_path);
   }
 #if REX_PLATFORM_IOS
-  ApplyIOSDefaultsOnce(settings_path);
+  const bool defaults_applied = ApplyIOSDefaultsOnce(settings_path);
+  const bool fill_applied = ApplyIOSFillDisplayDefaultOnce(settings_path);
   ApplyIOSLatencyDefaults();
+  // EnsureSimpleSettingsConfig only writes when a key is missing, so an
+  // existing settings.toml would keep the old values on the next launch.
+  if (defaults_applied || fill_applied) {
+    rex::ui::SaveSimpleSettingsConfig(settings_path);
+  }
 #endif
   rex::ui::EnsureSimpleSettingsConfig(settings_path);
 }

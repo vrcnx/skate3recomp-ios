@@ -83,6 +83,17 @@ Big single files (the ISO) are most reliable copied with Finder: select the
 iPad in the sidebar, open **Files** and drag the ISO onto **Skate 3**
 (`devicectl device copy` drops multi-GB files).
 
+## App icon
+
+The committed icon is original artwork. To use the real Skate 3 logo from
+your own disc instead (kept out of git):
+
+```sh
+python3 ios/tools/make_icon_from_game.py /path/to/Skate3.iso ios/LocalAssets.xcassets
+```
+
+`ios/build.sh` picks up `ios/LocalAssets.xcassets` automatically.
+
 ## Controls
 
 Use a Bluetooth controller (Xbox, PlayStation or MFi). Touch works for the
@@ -114,7 +125,7 @@ Deleting the app deletes its saves (copy the `skate3` folder out first).
 - On first launch the app applies iPad graphics defaults once (MSAA 2x, no
   PCSS, 2048 static shadows, 1.5x draw distance and LOD); change them in the
   settings menu (RB + Start) and they stick. Delete
-  `Documents/skate3/ios_defaults_v1` to apply them again.
+  `Documents/skate3/ios_defaults_v2` to apply them again.
 - Performance logging can be enabled without rebuilding by putting a
   `skate3.toml` in the app's Documents with, for example,
   `skate3_native_render_scene_perf_log = true`.

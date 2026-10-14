@@ -10979,6 +10979,12 @@ bool RenderScene(const NativeGuestOutputRenderContext& context, void* /*user_dat
       float(context.guest_output_width) / float(context.guest_output_height);
   const float wide_2d_scale =
       out_aspect2d > (16.0f / 9.0f) * 1.01f ? (16.0f / 9.0f) / out_aspect2d : 1.0f;
+  // Narrower output (4:3 tablet, Vert+): flat 2D is fit to the width in a
+  // vertically centered 16:9 band (clip.y scaled by tall_2d_scale), while
+  // perspective markers take the scene's side crop (clip.x scaled by its
+  // inverse, matching WideOutputHorScale).
+  const float tall_2d_scale =
+      out_aspect2d < (16.0f / 9.0f) * 0.99f ? out_aspect2d / (16.0f / 9.0f) : 1.0f;
 
   cmd->ProfileRegion(nrhi::ProfileStage::k2d);
 
@@ -11093,15 +11099,15 @@ bool RenderScene(const NativeGuestOutputRenderContext& context, void* /*user_dat
         cmd->SetPrimitiveTopology(nrhi::PrimitiveTopology::kTriangleList);
         cmd->SetPipeline(g_r.pso_blur_down);
         // Source UV rect (second register): the centered 16:9 band on a
-        // wide output; the guest screenshot raster is 16:9.
+        // wide or tall output; the guest screenshot raster is 16:9.
         const float grab_consts[8] = {1.0f / float(context.guest_output_width),
                                       1.0f / float(context.guest_output_height),
                                       0.0f,
                                       0.0f,
                                       wide_2d_scale,
-                                      1.0f,
+                                      tall_2d_scale,
                                       (1.0f - wide_2d_scale) * 0.5f,
-                                      0.0f};
+                                      (1.0f - tall_2d_scale) * 0.5f};
         cmd->SetRootConstants(0, 8, grab_consts, 0);
         cmd->SetTexture(1, g_r.output_srv_slot);
         cmd->Draw(3, 0);
@@ -11308,6 +11314,15 @@ bool RenderScene(const NativeGuestOutputRenderContext& context, void* /*user_dat
         // the former only.
         const bool ortho = d.consts[12] == 0.0f && d.consts[13] == 0.0f &&
                            d.consts[14] == 0.0f && d.consts[15] == 1.0f;
+        if (tall_2d_scale != 1.0f) {
+          // clip.y = dot(wp, c1) for flat draws; clip.x = dot(wp, c0) for
+          // perspective markers, which must match the cropped scene.
+          const int row = ortho ? 4 : 0;
+          const float scale = ortho ? tall_2d_scale : 1.0f / tall_2d_scale;
+          for (int i = 0; i < 4; ++i) {
+            constants[row + i] *= scale;
+          }
+        }
         constants[36] = ortho ? 1.0f : 0.0f;
         // m[9].y: sharp-magnification amount for APT cached-bitmap tiles
         // (see the cvar; the shader gates on actual fetch magnification).

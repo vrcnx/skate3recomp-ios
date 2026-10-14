@@ -59,6 +59,12 @@ cmake --preset "$preset" -DSKATE3_SHELL_BUILD=$shell > /dev/null
 cmake --build --preset "$preset" --target skate3_ios
 
 command -v xcodegen > /dev/null || die "xcodegen is not installed (brew install xcodegen)"
+# An icon built from the user's own game files wins when present (never committed).
+if [ -d ios/LocalAssets.xcassets ]; then
+    export SKATE3_IOS_ASSETS=LocalAssets.xcassets
+else
+    export SKATE3_IOS_ASSETS=Assets.xcassets
+fi
 xcodegen generate --quiet --spec ios/project.yml
 
 derived="$root/out/ios-derived"
