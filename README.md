@@ -6,6 +6,13 @@
 
 An unofficial native recompilation of the Xbox 360 version of Skate 3, supporting Windows, Linux, and macOS.
 
+> **iPadOS port (this fork):** runs on Apple Silicon iPads (M1 or newer) with
+> a controller. Build instructions, game install, saves and iPad-specific
+> notes are in [ios/README.md](ios/README.md). The runtime changes live in
+> [vrcnx/rexglue-skate3-ios](https://github.com/vrcnx/rexglue-skate3-ios)
+> (branch `ios-port`). Upstream project:
+> [mchughalex/skate3recomp](https://github.com/mchughalex/skate3recomp).
+
 As of v2.0.0, the game runs on a native renderer built directly on Direct3D 12 and Vulkan instead of emulating the Xbox 360 GPU. Compared to the emulated renderer it delivers more than twice the frame rate at roughly a quarter of the GPU power draw, and on Apple Silicon the frame rate uplift is closer to 10x.
 
 The new native renderer is early and is likely to have issues, I haven't tested the game all the way through.

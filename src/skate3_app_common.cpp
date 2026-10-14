@@ -412,6 +412,39 @@ void ApplyFirstRunVideoDefaults(const std::filesystem::path& settings_path,
   rex::cvar::SetFlagByName("draw_resolution_scale_y", scale);
 }
 
+#if REX_PLATFORM_IOS
+// iPad tuning, applied once per install (a marker beside settings.toml) so
+// later changes in the settings menu stick. The desktop defaults target
+// discrete GPUs: on a passively cooled tablet, 4x MSAA, PCSS and 2x draw
+// distance cost frame time and heat for little visible gain at this screen
+// size. Resolution scale, SSAO, bloom and shafts stay as on desktop.
+void ApplyIOSDefaultsOnce(const std::filesystem::path& settings_path) {
+  const auto marker = settings_path.parent_path() / "ios_defaults_v1";
+  std::error_code ec;
+  if (std::filesystem::exists(marker, ec)) {
+    return;
+  }
+  rex::cvar::SetFlagByName("skate3_native_render_scene_msaa", "2");
+  rex::cvar::SetFlagByName("skate3_native_render_scene_shadow_pcss", "false");
+  rex::cvar::SetFlagByName("skate3_native_render_scene_shadow_static_size", "2048");
+  rex::cvar::SetFlagByName("skate3_draw_distance_scale", "1.5");
+  rex::cvar::SetFlagByName("skate3_lod_distance_scale", "1.5");
+  std::filesystem::create_directories(marker.parent_path(), ec);
+  std::ofstream(marker) << "iPad defaults applied; delete to apply them again.\n";
+  REXLOG_INFO("Applied iOS graphics defaults (marker {})", marker.string());
+}
+
+// Not persisted in settings.toml, so set every launch unless a config file
+// overrides it. The camera smoothing boxcar trails the camera by half its
+// window; two 60 Hz periods still null the game's 60 Hz pose quantization
+// (any whole number of periods does) at ~17 ms instead of ~25 ms of lag.
+void ApplyIOSLatencyDefaults() {
+  if (!rex::cvar::HasNonDefaultValue("skate3_native_render_scene_smooth_camera_filter_ms")) {
+    rex::cvar::SetFlagByName("skate3_native_render_scene_smooth_camera_filter_ms", "33.333");
+  }
+}
+#endif
+
 void LoadAndNormalizeSimpleSettings(const std::filesystem::path& settings_path,
                                     const std::filesystem::path& developer_config_path) {
   if (std::filesystem::exists(settings_path)) {
@@ -419,6 +452,10 @@ void LoadAndNormalizeSimpleSettings(const std::filesystem::path& settings_path,
   } else {
     ApplyFirstRunVideoDefaults(settings_path, developer_config_path);
   }
+#if REX_PLATFORM_IOS
+  ApplyIOSDefaultsOnce(settings_path);
+  ApplyIOSLatencyDefaults();
+#endif
   rex::ui::EnsureSimpleSettingsConfig(settings_path);
 }
 
@@ -580,6 +617,14 @@ void Skate3BaseApp::OnConfigureFonts(ImFontAtlas* atlas) {
 #endif
 }
 
+#if REX_PLATFORM_IOS
+namespace skate3 {
+// skate3_ios_platform.mm
+void PrepareIOSStorage(const std::filesystem::path& game_root,
+                       const std::filesystem::path& cache_root);
+}  // namespace skate3
+#endif
+
 std::optional<rex::PathConfig> Skate3BaseApp::OnFinalizePaths(
     const rex::PathConfig& defaults, std::function<void(rex::PathConfig)> resume) {
   config_path_ = defaults.config_path;
@@ -602,6 +647,9 @@ std::optional<rex::PathConfig> Skate3BaseApp::OnFinalizePaths(
   auto runtime_paths = defaults;
   runtime_paths.game_data_root = ResolveRuntimeGameDataRoot(runtime_paths);
   runtime_paths.config_path.clear();
+#if REX_PLATFORM_IOS
+  skate3::PrepareIOSStorage(runtime_paths.game_data_root, defaults.cache_root);
+#endif
   if (!skate3::IsGameInstalled(runtime_paths.game_data_root)) {
     REXLOG_INFO("Game files not found at {}; launching rexglue ISO installer",
                 runtime_paths.game_data_root.string());
@@ -976,6 +1024,10 @@ void Skate3BaseApp::RestartGame() {
     }
     CloseHandle(process_info.hThread);
     CloseHandle(process_info.hProcess);
+#elif REX_PLATFORM_IOS
+    // iOS apps cannot launch themselves. Settings are already saved, so quit
+    // and let the player reopen the app to pick them up.
+    REXLOG_INFO("Restart requested; quitting so the app can be reopened");
 #elif defined(__linux__) || defined(__APPLE__)
     const auto executable_path = rex::filesystem::GetExecutablePath();
     if (executable_path.empty()) {

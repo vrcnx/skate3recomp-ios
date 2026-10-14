@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The Xbox 360 guest arena is one 4.5 GiB reservation plus its mirrored
+	     views (rex::system::Memory); the default iOS address space is too
+	     small for it. Needs a paid developer team. -->
+	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
+	<true/>
+	<!-- Guest memory, the native renderer's caches and MoltenVK together
+	     exceed the default per-app memory limit. -->
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+</dict>
+</plist>

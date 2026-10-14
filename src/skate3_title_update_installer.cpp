@@ -18,6 +18,7 @@
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
+#include <rex/platform.h>
 #include <rex/ui/overlay/acquire_wizard_overlay.h>
 #include <rex/ui/windowed_app_context.h>
 
@@ -32,6 +33,7 @@
 #include <winhttp.h>
 
 #include <rex/ui/window_win.h>
+#elif REX_PLATFORM_IOS
 #elif defined(__APPLE__)
 #include <sys/wait.h>
 #else
@@ -47,7 +49,12 @@ REXCVAR_DEFINE_STRING(skate3_title_update_url,
 
 namespace skate3 {
 
-#if defined(__APPLE__)
+#if REX_PLATFORM_IOS
+std::filesystem::path PickTitleUpdateFileIOS();
+bool DownloadToFileIOS(const std::string& url, const std::filesystem::path& destination,
+                       std::atomic<uint64_t>& copied_bytes, std::atomic<uint64_t>& total_bytes,
+                       std::string& error);
+#elif defined(__APPLE__)
 std::filesystem::path PickTitleUpdateFileMacOS();
 #endif
 
@@ -537,6 +544,14 @@ bool DownloadToFile(const std::string& url, const std::filesystem::path& destina
   return ok;
 }
 
+#elif REX_PLATFORM_IOS
+
+bool DownloadToFile(const std::string& url, const std::filesystem::path& destination,
+                    std::atomic<uint64_t>& copied_bytes, std::atomic<uint64_t>& total_bytes,
+                    std::string& error) {
+  return DownloadToFileIOS(url, destination, copied_bytes, total_bytes, error);
+}
+
 #else
 
 bool DownloadToFile(const std::string& url, const std::filesystem::path& destination,
@@ -605,6 +620,10 @@ std::filesystem::path PickTitleUpdateFile() {
     return {};
   }
   return filename;
+}
+#elif REX_PLATFORM_IOS
+std::filesystem::path PickTitleUpdateFile() {
+  return skate3::PickTitleUpdateFileIOS();
 }
 #elif defined(__APPLE__)
 std::filesystem::path PickTitleUpdateFile() {

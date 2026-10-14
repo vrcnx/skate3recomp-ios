@@ -16,6 +16,7 @@
 #include <vector>
 
 #include <rex/logging.h>
+#include <rex/platform.h>
 #include <rex/ui/overlay/install_wizard_overlay.h>
 #include <rex/ui/windowed_app_context.h>
 
@@ -33,7 +34,9 @@
 
 namespace skate3 {
 
-#if defined(__APPLE__)
+#if REX_PLATFORM_IOS
+std::filesystem::path PickIsoFileIOS();
+#elif defined(__APPLE__)
 std::filesystem::path PickIsoFileMacOS();
 #endif
 
@@ -99,6 +102,10 @@ std::filesystem::path PickIsoFile() {
     return {};
   }
   return filename;
+}
+#elif REX_PLATFORM_IOS
+std::filesystem::path PickIsoFile() {
+  return skate3::PickIsoFileIOS();
 }
 #elif defined(__APPLE__)
 std::filesystem::path PickIsoFile() {

@@ -55,6 +55,11 @@ if(WIN32)
     else()
         set(SKATE3_BUILD_PLATFORM "win-${SKATE3_TARGET_PROCESSOR}")
     endif()
+elseif(IOS)
+    if(NOT SKATE3_TARGET_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+        message(FATAL_ERROR "Unsupported iOS architecture: ${SKATE3_TARGET_PROCESSOR}. iOS builds are ARM64-only.")
+    endif()
+    set(SKATE3_BUILD_PLATFORM "ios-arm64")
 elseif(APPLE)
     if(SKATE3_TARGET_PROCESSOR MATCHES "aarch64|arm64|ARM64")
         set(SKATE3_BUILD_PLATFORM "macos-arm64")
@@ -237,7 +242,25 @@ if(WIN32)
 endif()
 
 include(cmake/RexGlue.cmake)
-include(cmake/CodegenTargets.cmake)
+# Codegen runs the host rexglue tool, so iOS builds reuse the generated/ tree
+# a macOS build produced (cmake --build --preset macos-release --target generate-all).
+if(NOT IOS)
+    include(cmake/CodegenTargets.cmake)
+endif()
+
+# A shell build swaps the recompiled game for a stub (ios/tools/make_shell_stub.py)
+# so the platform layer and install wizard can run without a Skate 3 dump.
+option(SKATE3_SHELL_BUILD "Build against a stub instead of the generated game code" OFF)
+set(SKATE3_GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/generated")
+if(SKATE3_SHELL_BUILD)
+    set(SKATE3_SHELL_STUB_ROOT "${CMAKE_CURRENT_BINARY_DIR}/shell-stub")
+    set(SKATE3_GENERATED_DIR "${SKATE3_SHELL_STUB_ROOT}/generated")
+    execute_process(
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/ios/tools/make_shell_stub.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}" "${SKATE3_GENERATED_DIR}"
+        COMMAND_ERROR_IS_FATAL ANY)
+endif()
 
 set(SKATE3_COMMON_SOURCES
     src/exception_compat.cpp
@@ -263,7 +286,9 @@ set(SKATE3_COMMON_SOURCES
     src/skate3_win_icon.cpp
     third_party/rexglue-sdk/thirdparty/crypto/sha256.cpp
 )
-if(APPLE)
+if(IOS)
+    list(APPEND SKATE3_COMMON_SOURCES src/skate3_ios_platform.mm)
+elseif(APPLE)
     list(APPEND SKATE3_COMMON_SOURCES src/skate3_iso_installer_macos.mm)
 endif()
 
@@ -286,10 +311,18 @@ if(WIN32)
         @ONLY
     )
     target_sources(skate3 PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/skate3.rc)
+elseif(IOS)
+    # The iOS app itself is an Xcode project (ios/project.yml) that links the
+    # merged archive below, so Xcode owns signing, provisioning and install.
+    add_library(skate3 STATIC ${SKATE3_SOURCES})
 else()
     add_executable(skate3 ${SKATE3_SOURCES})
 endif()
 
+if(SKATE3_SHELL_BUILD)
+    # Ahead of the source dir so "generated/skate3_init.h" resolves to the stub.
+    target_include_directories(skate3 BEFORE PRIVATE ${SKATE3_SHELL_STUB_ROOT})
+endif()
 target_include_directories(skate3 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -335,19 +368,19 @@ else()
     target_compile_definitions(skate3 PRIVATE SKATE3_HAS_TITLE_UPDATE=0)
 endif()
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/generated/sources.cmake")
-    include(generated/sources.cmake)
+if(EXISTS "${SKATE3_GENERATED_DIR}/sources.cmake")
+    include(${SKATE3_GENERATED_DIR}/sources.cmake)
     target_sources(skate3 PRIVATE ${GENERATED_SOURCES})
-    target_include_directories(skate3 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/generated)
+    target_include_directories(skate3 PRIVATE ${SKATE3_GENERATED_DIR})
 else()
     message(STATUS "generated/sources.cmake not found; run the generate-all target before building skate3")
 endif()
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/generated/eawebkit/sources.cmake")
+if(EXISTS "${SKATE3_GENERATED_DIR}/eawebkit/sources.cmake")
     set(_SKATE3_SAVED_GENERATED_SOURCES ${GENERATED_SOURCES})
-    include(generated/eawebkit/sources.cmake)
+    include(${SKATE3_GENERATED_DIR}/eawebkit/sources.cmake)
     target_sources(skate3 PRIVATE ${GENERATED_SOURCES})
-    target_include_directories(skate3 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/generated/eawebkit)
+    target_include_directories(skate3 PRIVATE ${SKATE3_GENERATED_DIR}/eawebkit)
     set(GENERATED_SOURCES ${_SKATE3_SAVED_GENERATED_SOURCES})
     unset(_SKATE3_SAVED_GENERATED_SOURCES)
 else()
@@ -357,7 +390,9 @@ endif()
 target_link_libraries(skate3 PRIVATE rex::runtime)
 rexglue_configure_target(skate3)
 
-if(APPLE)
+if(IOS)
+    include(ios/SkateIOS.cmake)
+elseif(APPLE)
     target_link_options(skate3 PRIVATE -Wl,-stack_size,0x4000000)
     target_link_libraries(skate3 PRIVATE "-framework Cocoa")
 endif()
@@ -366,6 +401,7 @@ if(WIN32)
     target_link_libraries(skate3 PRIVATE comdlg32 winhttp d3dcompiler gdiplus)
 endif()
 
+if(NOT IOS)
 add_custom_target(skate3_stage_runtime_library
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:skate3>"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -375,6 +411,7 @@ add_custom_target(skate3_stage_runtime_library
     VERBATIM
 )
 add_dependencies(skate3 skate3_stage_runtime_library)
+endif()
 
 if(NOT SKATE3_EFFECTIVE_TITLE_UPDATE_PACKAGE STREQUAL "")
     add_custom_target(skate3_stage_title_update_patches
