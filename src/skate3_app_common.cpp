@@ -486,6 +486,20 @@ bool ApplyIOSFillDisplayDefaultOnce(const std::filesystem::path& settings_path) 
   return true;
 }
 
+// A deeper device buffer rides out a late guest audio frame instead of
+// crackling (iOS's default IO buffer is small); about 21 ms more latency.
+bool ApplyIOSAudioDefaultsOnce(const std::filesystem::path& settings_path) {
+  const auto marker = settings_path.parent_path() / "ios_audio_v1";
+  std::error_code ec;
+  if (std::filesystem::exists(marker, ec)) {
+    return false;
+  }
+  rex::cvar::SetFlagByName("audio_device_sample_frames", "1024");
+  std::filesystem::create_directories(marker.parent_path(), ec);
+  std::ofstream(marker) << "iOS audio defaults applied; delete to apply them again.\n";
+  return true;
+}
+
 // Not persisted in settings.toml, so set every launch unless a config file
 // overrides it. The camera smoothing boxcar trails the camera by half its
 // window; two 60 Hz periods still null the game's 60 Hz pose quantization
@@ -493,6 +507,11 @@ bool ApplyIOSFillDisplayDefaultOnce(const std::filesystem::path& settings_path) 
 void ApplyIOSLatencyDefaults() {
   if (!rex::cvar::HasNonDefaultValue("skate3_native_render_scene_smooth_camera_filter_ms")) {
     rex::cvar::SetFlagByName("skate3_native_render_scene_smooth_camera_filter_ms", "33.333");
+  }
+  // More guest audio frames in flight (5.3 ms each): the queue only fills
+  // while the game runs ahead, and then absorbs a stalled frame.
+  if (!rex::cvar::HasNonDefaultValue("audio_maxqframes")) {
+    rex::cvar::SetFlagByName("audio_maxqframes", "24");
   }
 }
 #endif
@@ -507,10 +526,11 @@ void LoadAndNormalizeSimpleSettings(const std::filesystem::path& settings_path,
 #if REX_PLATFORM_IOS
   const bool defaults_applied = ApplyIOSDefaultsOnce(settings_path);
   const bool fill_applied = ApplyIOSFillDisplayDefaultOnce(settings_path);
+  const bool audio_applied = ApplyIOSAudioDefaultsOnce(settings_path);
   ApplyIOSLatencyDefaults();
   // EnsureSimpleSettingsConfig only writes when a key is missing, so an
   // existing settings.toml would keep the old values on the next launch.
-  if (defaults_applied || fill_applied) {
+  if (defaults_applied || fill_applied || audio_applied) {
     rex::ui::SaveSimpleSettingsConfig(settings_path);
   }
 #endif
