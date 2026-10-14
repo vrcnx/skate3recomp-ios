@@ -138,3 +138,18 @@ Deleting the app deletes its saves (copy the `skate3` folder out first).
   background.
 - Guest memory uses Mach memory entries instead of POSIX shared memory
   (`REX_MEMORY_MACH_ENTRIES`, `third_party/rexglue-sdk/src/core/memory_posix.cpp`).
+
+## Credits
+
+- **iPadOS port:** [CNX (@vrcnx)](https://github.com/vrcnx), built with
+  [Claude Code](https://claude.com/claude-code) (Claude Opus 5.5).
+- **Skate 3 Recomp:** [mchughalex](https://github.com/mchughalex/skate3recomp),
+  whose recompilation, native renderer and desktop ports this builds on.
+- **Runtime:** [rexglue SDK](https://github.com/rexglue/rexglue-sdk) and
+  [Xenia](https://github.com/xenia-project/xenia).
+- [SDL](https://github.com/libsdl-org/SDL),
+  [MoltenVK](https://github.com/KhronosGroup/MoltenVK), FFmpeg, Dear ImGui and
+  the other libraries under `third_party/rexglue-sdk/thirdparty`.
+
+Skate 3 is a trademark of Electronic Arts. This project ships no game files;
+you need your own legally obtained copy.

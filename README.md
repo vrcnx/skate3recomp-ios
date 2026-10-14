@@ -6,8 +6,9 @@
 
 An unofficial native recompilation of the Xbox 360 version of Skate 3, supporting Windows, Linux, and macOS.
 
-> **iPadOS port (this fork):** runs on Apple Silicon iPads (M1 or newer) with
-> a controller. Build instructions, game install, saves and iPad-specific
+> **iPadOS port (this fork)** by [CNX (@vrcnx)](https://github.com/vrcnx),
+> built with [Claude Code](https://claude.com/claude-code): runs on Apple
+> Silicon iPads (M1 or newer) with a controller. Build instructions, game install, saves and iPad-specific
 > notes are in [ios/README.md](ios/README.md). The runtime changes live in
 > [vrcnx/rexglue-skate3-ios](https://github.com/vrcnx/rexglue-skate3-ios)
 > (branch `ios-port`). Upstream project:
