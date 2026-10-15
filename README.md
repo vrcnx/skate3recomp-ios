@@ -13,6 +13,8 @@ An unofficial native recompilation of the Xbox 360 version of Skate 3, supportin
 > [vrcnx/rexglue-skate3-ios](https://github.com/vrcnx/rexglue-skate3-ios)
 > (branch `ios-port`). Upstream project:
 > [mchughalex/skate3recomp](https://github.com/mchughalex/skate3recomp).
+> Also on iPad: Call of Duty: Modern Warfare 2, with offline bots —
+> [vrcnx/mw2-recompiled-ios](https://github.com/vrcnx/mw2-recompiled-ios).
 
 As of v2.0.0, the game runs on a native renderer built directly on Direct3D 12 and Vulkan instead of emulating the Xbox 360 GPU. Compared to the emulated renderer it delivers more than twice the frame rate at roughly a quarter of the GPU power draw, and on Apple Silicon the frame rate uplift is closer to 10x.
 
